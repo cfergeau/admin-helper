@@ -15,7 +15,7 @@ BINARY_NAME := crc-admin-helper
 RELEASE_DIR ?= release
 GOLANGCI_LINT_VERSION = v1.54.2
 
-LDFLAGS := -X github.com/crc-org/admin-helper/pkg/constants.Version=$(VERSION) -extldflags='-static' -s -w $(GO_LDFLAGS)
+LDFLAGS := -X github.com/crc-org/admin-helper/pkg/constants.Version=$(VERSION) -extldflags='-static' $(GO_LDFLAGS)
 
 .PHONY: vendor
 vendor:
