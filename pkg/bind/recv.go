@@ -5,6 +5,7 @@ package bind
 import (
 	"fmt"
 	"net"
+	"os"
 	"syscall"
 )
 
@@ -16,7 +17,7 @@ type Result struct {
 // Receive a file descriptor (*net.TCPListener here) from an unix domain socket
 // https://github.com/moby/vpnkit/blob/master/go/pkg/vpnkit/forward/vmnet_darwin.go#L16
 // https://github.com/ftrvxmtrx/fd/blob/master/fd.go
-func Recv(via *net.UnixConn, localIP string) (*net.TCPListener, error) {
+func Recv(via *net.UnixConn, localIP string) (net.Listener, error) {
 	viaf, err := via.File()
 	if err != nil {
 		return nil, err
@@ -45,41 +46,11 @@ func Recv(via *net.UnixConn, localIP string) (*net.TCPListener, error) {
 	if len(fds) != 1 {
 		return nil, fmt.Errorf("unexpected number of fd (got %d)", len(fds))
 	}
-	return fdToListener(localIP, uintptr(fds[0]))
-}
 
-func fdToListener(ip string, newFD uintptr) (*net.TCPListener, error) {
-	ln, err := net.ListenTCP("tcp", &net.TCPAddr{
-		IP:   net.ParseIP(ip),
-		Port: 0,
-	})
-	if err != nil {
-		return nil, err
+	fd := os.NewFile(uintptr(fds[0]), "")
+	if fd == nil {
+		return nil, fmt.Errorf("could not open fd")
 	}
-	raw, err := ln.SyscallConn()
-	if err != nil {
-		_ = ln.Close()
-		return nil, err
-	}
-	if err := switchFDs(raw, newFD); err != nil {
-		_ = ln.Close()
-		_ = syscall.Close(int(newFD))
-		return nil, err
-	}
-	_ = syscall.Close(int(newFD))
-	return ln, nil
-}
 
-func switchFDs(raw syscall.RawConn, newFD uintptr) error {
-	var dupErr error
-	err := raw.Control(func(fd uintptr) {
-		dupErr = syscall.Dup2(int(newFD), int(fd))
-	})
-	if dupErr != nil {
-		return dupErr
-	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return net.FileListener(fd)
 }
