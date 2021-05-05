@@ -3,6 +3,7 @@
 package bind
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -17,7 +18,7 @@ func TestRoundTrip(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	sentLn, err := net.Listen("tcp", "127.0.0.1:0")
+	sentLn, err := net.Listen("tcp", "127.0.0.1:1234")
 	assert.NoError(t, err)
 	defer sentLn.Close()
 
@@ -36,5 +37,24 @@ func TestRoundTrip(t *testing.T) {
 
 	receivedLn, err := Recv(clientConn.(*net.UnixConn), "127.0.0.1")
 	assert.NoError(t, err)
+	go func() {
+		dataConn, err := receivedLn.Accept()
+		assert.NoError(t, err)
+		defer dataConn.Close()
+		fmt.Println("Connection accepted")
+		var data []byte
+		bytesRead, err := dataConn.Read(data)
+		fmt.Println("Data read")
+		assert.NoError(t, err)
+		assert.Equal(t, 8, bytesRead)
+		assert.Equal(t, string(data), "sentdata")
+	}()
+	clientConn, err = net.Dial("tcp", "127.0.0.1:1234")
+	assert.NoError(t, err)
+	fmt.Println("Client connected")
+	bytesSent, err := clientConn.Write([]byte("sentdata"))
+	fmt.Println("Data written")
+	assert.NoError(t, err)
+	assert.Equal(t, bytesSent, 8)
 	assert.NoError(t, receivedLn.Close())
 }
