@@ -271,10 +271,6 @@ func (h *Hosts) checkIsWritable() error {
 }
 
 func (h *Hosts) Contains(ip, host string) bool {
-	if err := h.verifyHosts([]string{host}); err != nil {
-		return false
-	}
-
 	lines := h.File.GetHostsFileLinesByAddress(ip)
 
 	for _, line := range lines {
