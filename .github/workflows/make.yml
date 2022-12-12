@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - "master"
+      - "misc"
   pull_request: {}
 jobs:
   build:
