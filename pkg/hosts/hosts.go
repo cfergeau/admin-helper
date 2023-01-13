@@ -2,12 +2,13 @@ package hosts
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/goodhosts/hostsfile"
+	"github.com/areYouLazy/libhosty"
 )
 
 const (
@@ -15,6 +16,10 @@ const (
 	dns1123SubdomainRegexp = `[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*`
 	clusterDomain          = ".crc.testing"
 	appsDomain             = ".apps-crc.testing"
+
+	crcTemplate = `# Added by CRC
+# End of CRC section
+`
 )
 
 var (
@@ -23,7 +28,7 @@ var (
 )
 
 type Hosts struct {
-	File       *hostsfile.Hosts
+	File       *libhosty.HostsFile
 	HostFilter func(string) bool
 }
 
@@ -36,7 +41,7 @@ func init() {
 }
 
 func New() (*Hosts, error) {
-	file, err := hostsfile.NewHosts()
+	file, err := libhosty.Init()
 	if err != nil {
 		return nil, err
 	}
@@ -51,13 +56,19 @@ func defaultFilter(s string) bool {
 	return clusterRegexp.MatchString(s) || appRegexp.MatchString(s)
 }
 
-func (h *Hosts) Add(ip string, hosts []string) error {
+func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	if err := h.verifyHosts(hosts); err != nil {
 		return err
 	}
 
 	if err := h.checkIsWritable(); err != nil {
 		return err
+	}
+
+	// parse ip to net.IP
+	ip := net.ParseIP(ipRaw)
+	if ip == nil {
+		return libhosty.ErrCannotParseIPAddress(ipRaw)
 	}
 
 	uniqueHosts := map[string]bool{}
@@ -72,10 +83,42 @@ func (h *Hosts) Add(ip string, hosts []string) error {
 
 	sort.Strings(hostEntries)
 
-	if err := h.File.Add(ip, hostEntries...); err != nil {
+	start, end, err := h.verifyCrcSection()
+	if err != nil {
 		return err
 	}
-	return h.File.Flush()
+
+	line, err := h.findIP(start, end, ip)
+	if err != nil {
+		return err
+	}
+
+	// no host record, need to create new host line
+	if line == nil {
+		hfl := libhosty.HostsFileLine{
+			Type:        libhosty.LineTypeAddress,
+			Address:     ip,
+			Hostnames:   hostEntries,
+			Comment:     "",
+			IsCommented: false,
+		}
+
+		// inserts to hosts
+		newHosts := make([]libhosty.HostsFileLine, 0)
+		newHosts = append(newHosts, h.File.HostsFileLines[:start+1]...)
+		newHosts = append(newHosts, hfl)
+		newLineNum := len(newHosts) - 1
+		newHosts = append(newHosts, h.File.HostsFileLines[start+1:]...)
+		h.File.HostsFileLines = newHosts
+
+		// generate raw version of the line
+		hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
+
+	} else {
+		line.Hostnames = append(line.Hostnames, hostEntries...)
+	}
+
+	return h.File.SaveHostsFile()
 }
 
 func (h *Hosts) Remove(hosts []string) error {
@@ -92,60 +135,67 @@ func (h *Hosts) Remove(hosts []string) error {
 		uniqueHosts[hosts[i]] = true
 	}
 
-	var hostEntries []string
+	var hostEntries = make(map[string]struct{}, len(uniqueHosts))
+
 	for key := range uniqueHosts {
-		hostEntries = append(hostEntries, key)
+		hostEntries[key] = struct{}{}
 	}
 
-	for _, host := range hostEntries {
-		if err := h.File.RemoveByHostname(host); err != nil {
-			return err
+	start, end, err := h.verifyCrcSection()
+	if err != nil {
+		return err
+	}
+
+	for i := start; i < end; i++ {
+		line := h.File.GetHostsFileLineByRow(i)
+		if line.Type == libhosty.LineTypeComment {
+			continue
+		}
+
+		for hostIdx, hostname := range line.Hostnames {
+			if _, ok := hostEntries[hostname]; ok {
+				if len(line.Hostnames) > 1 {
+					line.Hostnames = append(line.Hostnames[:hostIdx], line.Hostnames[hostIdx+1:]...)
+				}
+
+				// remove the line if there are no more hostnames (other than the actual one)
+				if len(line.Hostnames) < 1 {
+					h.File.RemoveHostsFileLineByRow(i)
+				}
+			}
+
 		}
 	}
-	return h.File.Flush()
+
+	return h.File.SaveHostsFile()
 }
 
-func (h *Hosts) Clean(rawSuffixes []string) error {
+func (h *Hosts) Clean() error {
 	if err := h.checkIsWritable(); err != nil {
 		return err
 	}
 
-	var suffixes []string
-	for _, suffix := range rawSuffixes {
-		if !strings.HasPrefix(suffix, ".") {
-			return fmt.Errorf("suffix should start with a dot")
-		}
-		suffixes = append(suffixes, suffix)
-	}
-
-	var toDelete []string
-	for _, line := range h.File.Lines {
-		for _, host := range line.Hosts {
-			for _, suffix := range suffixes {
-				if strings.HasSuffix(host, suffix) {
-					toDelete = append(toDelete, host)
-					break
-				}
-			}
-		}
-	}
-
-	if err := h.verifyHosts(toDelete); err != nil {
+	start, end, err := h.verifyCrcSection()
+	if err != nil {
 		return err
 	}
 
-	for _, host := range toDelete {
-		if err := h.File.RemoveByHostname(host); err != nil {
-			return err
-		}
-	}
-	return h.File.Flush()
+	newHosts := make([]libhosty.HostsFileLine, 0)
+	newHosts = append(newHosts, h.File.HostsFileLines[:start-1]...)
+	newHosts = append(newHosts, h.File.HostsFileLines[end+1:]...)
+	// add empty line
+	newHosts = append(newHosts, libhosty.HostsFileLine{Type: libhosty.LineTypeEmpty})
+	h.File.HostsFileLines = newHosts
+
+	return h.File.SaveHostsFile()
 }
 
 func (h *Hosts) checkIsWritable() error {
-	if !h.File.IsWritable() {
+	file, err := os.OpenFile(h.File.Config.FilePath, os.O_WRONLY, 0660)
+	if err != nil {
 		return fmt.Errorf("host file not writable, try running with elevated privileges")
 	}
+	defer file.Close()
 	return nil
 }
 
@@ -154,7 +204,17 @@ func (h *Hosts) Contains(ip, host string) bool {
 		return false
 	}
 
-	return h.File.Has(ip, host)
+	lines := h.File.GetHostsFileLinesByAddress(ip)
+
+	for _, line := range lines {
+		for _, h := range line.Hostnames {
+			if h == host {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (h *Hosts) verifyHosts(hosts []string) error {
@@ -164,4 +224,52 @@ func (h *Hosts) verifyHosts(hosts []string) error {
 		}
 	}
 	return nil
+}
+
+func (h *Hosts) verifyCrcSection() (int, int, error) {
+	start := -1
+	end := -1
+
+	for i, line := range h.File.HostsFileLines {
+		if line.Type == libhosty.LineTypeComment {
+			if strings.Contains(line.Raw, "Added by CRC") {
+				start = i
+				continue
+			}
+
+			if strings.Contains(line.Raw, "End of CRC section") {
+				end = i
+				break
+			}
+
+		}
+	}
+
+	if start > 0 && end > 0 {
+		return start, end, nil
+	}
+
+	hfl, err := libhosty.ParseHostsFileAsString(crcTemplate)
+	if err != nil {
+		return -1, -1, err
+	}
+
+	h.File.HostsFileLines = append(h.File.HostsFileLines, hfl...)
+
+	return h.verifyCrcSection()
+}
+
+func (h *Hosts) findIP(start, end int, ip net.IP) (*libhosty.HostsFileLine, error) {
+	for i := start; i < end; i++ {
+		line := h.File.GetHostsFileLineByRow(i)
+		if line.IsCommented {
+			continue
+		}
+
+		if net.IP.Equal(line.Address, ip) {
+			return line, nil
+		}
+	}
+
+	return nil, nil
 }

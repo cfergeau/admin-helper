@@ -1,13 +1,24 @@
 package hosts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
-	"github.com/goodhosts/hostsfile"
+	"github.com/areYouLazy/libhosty"
+
 	"github.com/stretchr/testify/assert"
+)
+
+const (
+	hostsTemplate = `# Do not remove the following line, or various programs
+# that require network functionality will fail.
+127.0.0.1        localhost.localdomain localhost
+::1              localhost6.localdomain6 localhost6
+`
 )
 
 func TestAdd(t *testing.T) {
@@ -25,7 +36,7 @@ func TestAdd(t *testing.T) {
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, "127.0.0.1 entry1 entry2 entry3"+eol()+"127.0.0.2 entry4"+eol(), string(content))
+	assert.Equal(t, "127.0.0.1        entry1"+eol()+crcSection("127.0.0.2        entry4", "127.0.0.1        entry1 entry2 entry3")+eol(), string(content))
 }
 
 func TestRemove(t *testing.T) {
@@ -34,15 +45,16 @@ func TestRemove(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	hostsFile := filepath.Join(dir, "hosts")
-	assert.NoError(t, os.WriteFile(hostsFile, []byte(`127.0.0.1 entry1 entry2`), 0600))
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate), 0600))
 
 	host := hosts(t, hostsFile)
+	assert.NoError(t, host.Add("127.0.0.1", []string{"entry1", "entry2"}))
 
 	assert.NoError(t, host.Remove([]string{"entry2"}))
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, "127.0.0.1 entry1"+eol(), string(content))
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry1")+eol(), string(content))
 }
 
 func TestClean(t *testing.T) {
@@ -51,15 +63,15 @@ func TestClean(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	hostsFile := filepath.Join(dir, "hosts")
-	assert.NoError(t, os.WriteFile(hostsFile, []byte(`127.0.0.1 entry1.suffix1 entry2.suffix2`), 0600))
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate+eol()+crcSection("127.0.0.1 entry1.suffix1 entry2.suffix2")), 0600))
 
 	host := hosts(t, hostsFile)
 
-	assert.NoError(t, host.Clean([]string{".suffix1"}))
+	assert.NoError(t, host.Clean())
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, "127.0.0.1 entry2.suffix2"+eol(), string(content))
+	assert.Equal(t, hostsTemplate, string(content))
 }
 
 func TestContains(t *testing.T) {
@@ -85,7 +97,8 @@ func TestSuffixFilter(t *testing.T) {
 	hostsFile := filepath.Join(dir, "hosts")
 	assert.NoError(t, os.WriteFile(hostsFile, []byte(`127.0.0.1 localhost localhost.localdomain`), 0600))
 
-	file, err := hostsfile.NewCustomHosts(hostsFile)
+	config, _ := libhosty.NewHostsFileConfig(hostsFile)
+	file, err := libhosty.InitWithConfig(config)
 	assert.NoError(t, err)
 	host := Hosts{
 		File:       file,
@@ -98,12 +111,12 @@ func TestSuffixFilter(t *testing.T) {
 	assert.Error(t, host.Add("127.0.0.1", []string{"host.poison"}))
 	assert.Error(t, host.Add("127.0.0.1", []string{"CAPITAL.crc.testing"}))
 	assert.Error(t, host.Remove([]string{"localhost"}))
-	assert.NoError(t, host.Clean([]string{".crc.testing"}))
-	assert.Error(t, host.Clean([]string{".localdomain"}))
+	assert.NoError(t, host.Clean())
 }
 
 func hosts(t *testing.T, hostsFile string) Hosts {
-	file, err := hostsfile.NewCustomHosts(hostsFile)
+	config, _ := libhosty.NewHostsFileConfig(hostsFile)
+	file, err := libhosty.InitWithConfig(config)
 	assert.NoError(t, err)
 	return Hosts{
 		File: file,
@@ -118,4 +131,8 @@ func eol() string {
 		return "\r\n"
 	}
 	return "\n"
+}
+
+func crcSection(lines ...string) string {
+	return fmt.Sprintf("# Added by CRC"+eol()+"%s"+eol()+"# End of CRC section", strings.Join(lines, eol()))
 }
