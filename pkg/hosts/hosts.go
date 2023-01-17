@@ -194,11 +194,15 @@ func (h *Hosts) Clean() error {
 		return err
 	}
 
-	newHosts := make([]libhosty.HostsFileLine, 0)
+	var newHosts []libhosty.HostsFileLine
+
 	newHosts = append(newHosts, h.File.HostsFileLines[:start-1]...)
 	newHosts = append(newHosts, h.File.HostsFileLines[end+1:]...)
 	h.File.HostsFileLines = newHosts
-	h.File.AddEmptyFileLine()
+	_, _, emptyLineErr := h.File.AddEmptyFileLine()
+	if emptyLineErr != nil {
+		return emptyLineErr
+	}
 
 	return h.File.SaveHostsFile()
 }
