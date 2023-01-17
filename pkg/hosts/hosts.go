@@ -113,7 +113,23 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
 
 	} else {
-		line.Hostnames = append(line.Hostnames, hostEntries...)
+		var hostToAdd []string
+		for _, hostName := range hostEntries {
+			// check that new host not present in this line
+			contains := false
+			for _, lineHost := range line.Hostnames {
+				if hostName == lineHost {
+					contains = true
+					break
+				}
+			}
+			// add only new hosts
+			if !contains {
+				hostToAdd = append(hostToAdd, hostName)
+			}
+		}
+		line.Hostnames = append(line.Hostnames, hostToAdd...)
+
 	}
 
 	return h.File.SaveHostsFile()
