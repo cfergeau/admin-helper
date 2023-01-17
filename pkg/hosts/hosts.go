@@ -96,11 +96,9 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	// no host record, need to create new host line
 	if line == nil {
 		hfl := libhosty.HostsFileLine{
-			Type:        libhosty.LineTypeAddress,
-			Address:     ip,
-			Hostnames:   hostEntries,
-			Comment:     "",
-			IsCommented: false,
+			Type:      libhosty.LineTypeAddress,
+			Address:   ip,
+			Hostnames: hostEntries,
 		}
 
 		// inserts to hosts
