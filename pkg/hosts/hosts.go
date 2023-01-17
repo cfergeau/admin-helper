@@ -197,9 +197,8 @@ func (h *Hosts) Clean() error {
 	newHosts := make([]libhosty.HostsFileLine, 0)
 	newHosts = append(newHosts, h.File.HostsFileLines[:start-1]...)
 	newHosts = append(newHosts, h.File.HostsFileLines[end+1:]...)
-	// add empty line
-	newHosts = append(newHosts, libhosty.HostsFileLine{Type: libhosty.LineTypeEmpty})
 	h.File.HostsFileLines = newHosts
+	h.File.AddEmptyFileLine()
 
 	return h.File.SaveHostsFile()
 }
