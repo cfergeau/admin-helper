@@ -106,11 +106,13 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		newHosts = append(newHosts, h.File.HostsFileLines[:start+1]...)
 		newHosts = append(newHosts, hfl)
 		newLineNum := len(newHosts) - 1
+		h.File.Lock()
 		newHosts = append(newHosts, h.File.HostsFileLines[start+1:]...)
 		h.File.HostsFileLines = newHosts
 
 		// generate raw version of the line
 		hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
+		h.File.Unlock()
 
 	} else {
 		var hostToAdd []string
@@ -128,7 +130,9 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 				hostToAdd = append(hostToAdd, hostName)
 			}
 		}
+		h.File.Lock()
 		line.Hostnames = append(line.Hostnames, hostToAdd...)
+		h.File.Unlock()
 
 	}
 
@@ -169,7 +173,9 @@ func (h *Hosts) Remove(hosts []string) error {
 		for hostIdx, hostname := range line.Hostnames {
 			if _, ok := hostEntries[hostname]; ok {
 				if len(line.Hostnames) > 1 {
+					h.File.Lock()
 					line.Hostnames = append(line.Hostnames[:hostIdx], line.Hostnames[hostIdx+1:]...)
+					h.File.Unlock()
 				}
 
 				// remove the line if there are no more hostnames (other than the actual one)
@@ -198,7 +204,9 @@ func (h *Hosts) Clean() error {
 
 	newHosts = append(newHosts, h.File.HostsFileLines[:start-1]...)
 	newHosts = append(newHosts, h.File.HostsFileLines[end+1:]...)
+	h.File.Lock()
 	h.File.HostsFileLines = newHosts
+	h.File.Unlock()
 	_, _, emptyLineErr := h.File.AddEmptyFileLine()
 	if emptyLineErr != nil {
 		return emptyLineErr
