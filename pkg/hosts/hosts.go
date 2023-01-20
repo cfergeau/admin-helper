@@ -20,6 +20,7 @@ const (
 	crcTemplate = `# Added by CRC
 # End of CRC section
 `
+	maxHostsInLine = 9
 )
 
 var (
@@ -88,55 +89,83 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		return err
 	}
 
-	line, err := h.findIP(start, end, ip)
+	lines, err := h.findIP(start, end, ip)
 	if err != nil {
 		return err
 	}
 
 	// no host record, need to create new host line
-	if line == nil {
-		hfl := libhosty.HostsFileLine{
-			Type:      libhosty.LineTypeAddress,
-			Address:   ip,
-			Hostnames: hostEntries,
+	if lines == nil {
+		if len(hostEntries) > maxHostsInLine {
+			multiLineHosts := ChunkSlice(hostEntries, maxHostsInLine)
+			for _, hosts := range multiLineHosts {
+				h.createAndAddHostsLine(ip, hosts, start)
+			}
+		} else {
+			h.createAndAddHostsLine(ip, hostEntries, start)
 		}
-
-		// inserts to hosts
-		newHosts := make([]libhosty.HostsFileLine, 0)
-		newHosts = append(newHosts, h.File.HostsFileLines[:start+1]...)
-		newHosts = append(newHosts, hfl)
-		newLineNum := len(newHosts) - 1
-		h.File.Lock()
-		newHosts = append(newHosts, h.File.HostsFileLines[start+1:]...)
-		h.File.HostsFileLines = newHosts
-
-		// generate raw version of the line
-		hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
-		h.File.Unlock()
 
 	} else {
 		var hostToAdd []string
 		for _, hostName := range hostEntries {
 			// check that new host not present in this line
 			contains := false
-			for _, lineHost := range line.Hostnames {
-				if hostName == lineHost {
-					contains = true
-					break
-				}
-			}
+
+			lineNum, _ := h.File.GetHostsFileLineByHostname(hostName)
+
+			// check that line inside crc region
+			contains = lineNum > start && lineNum < end
+
 			// add only new hosts
 			if !contains {
 				hostToAdd = append(hostToAdd, hostName)
 			}
 		}
-		h.File.Lock()
-		line.Hostnames = append(line.Hostnames, hostToAdd...)
-		h.File.Unlock()
+		for _, line := range lines {
+			if len(hostToAdd)+len(line.Hostnames) > maxHostsInLine {
+
+				fittingNumOfRecords := maxHostsInLine - len(line.Hostnames)
+				if fittingNumOfRecords > len(hostToAdd) {
+					fittingNumOfRecords = len(hostToAdd)
+				}
+
+				hostsForExistingLine := hostToAdd[0:fittingNumOfRecords]
+				h.File.Lock()
+				line.Hostnames = append(line.Hostnames, hostsForExistingLine...)
+				h.File.Unlock()
+				hostToAdd = hostToAdd[fittingNumOfRecords:]
+
+			} else {
+				h.File.Lock()
+				line.Hostnames = append(line.Hostnames, hostToAdd...)
+				h.File.Unlock()
+			}
+		}
 
 	}
 
 	return h.File.SaveHostsFile()
+}
+
+func (h *Hosts) createAndAddHostsLine(ip net.IP, hosts []string, sectionStart int) {
+	hfl := libhosty.HostsFileLine{
+		Type:      libhosty.LineTypeAddress,
+		Address:   ip,
+		Hostnames: hosts,
+	}
+
+	// inserts to hosts
+	newHosts := make([]libhosty.HostsFileLine, 0)
+	newHosts = append(newHosts, h.File.HostsFileLines[:sectionStart+1]...)
+	newHosts = append(newHosts, hfl)
+	newLineNum := len(newHosts) - 1
+	h.File.Lock()
+	newHosts = append(newHosts, h.File.HostsFileLines[sectionStart+1:]...)
+	h.File.HostsFileLines = newHosts
+
+	// generate raw version of the line
+	hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
+	h.File.Unlock()
 }
 
 func (h *Hosts) Remove(hosts []string) error {
@@ -284,17 +313,18 @@ func (h *Hosts) verifyCrcSection() (int, int, error) {
 	return h.verifyCrcSection()
 }
 
-func (h *Hosts) findIP(start, end int, ip net.IP) (*libhosty.HostsFileLine, error) {
+func (h *Hosts) findIP(start, end int, ip net.IP) ([]*libhosty.HostsFileLine, error) {
+	var result []*libhosty.HostsFileLine
 	for i := start; i < end; i++ {
 		line := h.File.GetHostsFileLineByRow(i)
-		if line.IsCommented {
+		if line.Type == libhosty.LineTypeComment {
 			continue
 		}
 
 		if net.IP.Equal(line.Address, ip) {
-			return line, nil
+			result = append(result, line)
 		}
 	}
 
-	return nil, nil
+	return result, nil
 }

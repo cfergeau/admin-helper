@@ -39,6 +39,40 @@ func TestAdd(t *testing.T) {
 	assert.Equal(t, "127.0.0.1        entry1"+eol()+crcSection("127.0.0.2        entry4", "127.0.0.1        entry1 entry2 entry3")+eol(), string(content))
 }
 
+func TestAddMoreThen9Hosts(t *testing.T) {
+	dir, err := os.MkdirTemp("", "hosts")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	hostsFile := filepath.Join(dir, "hosts")
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate), 0600))
+
+	host := hosts(t, hostsFile)
+
+	assert.NoError(t, host.Add("127.0.0.1", []string{"entry1", "entry2", "entry3", "entry3", "entry4", "entry5", "entry6", "entry7", "entry8", "entry9", "entry10"}))
+
+	content, err := os.ReadFile(hostsFile)
+	assert.NoError(t, err)
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry9", "127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry8")+eol(), string(content))
+}
+
+func TestAddMoreThen9HostsInMultipleLines(t *testing.T) {
+	dir, err := os.MkdirTemp("", "hosts")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	hostsFile := filepath.Join(dir, "hosts")
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate+eol()+crcSection("127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7", "127.0.0.1        entry11 entry12 entry13 entry14 entry15 entry16 entry17 entry18")+eol()), 0600))
+
+	host := hosts(t, hostsFile)
+
+	assert.NoError(t, host.Add("127.0.0.1", []string{"entry8", "entry9", "entry10"}))
+
+	content, err := os.ReadFile(hostsFile)
+	assert.NoError(t, err)
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry8", "127.0.0.1        entry11 entry12 entry13 entry14 entry15 entry16 entry17 entry18 entry9")+eol(), string(content))
+}
+
 func TestRemove(t *testing.T) {
 	dir, err := os.MkdirTemp("", "hosts")
 	assert.NoError(t, err)
