@@ -108,6 +108,23 @@ func TestClean(t *testing.T) {
 	assert.Equal(t, hostsTemplate, string(content))
 }
 
+func TestCleanWithoutCrcSection(t *testing.T) {
+	dir, err := os.MkdirTemp("", "hosts")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	hostsFile := filepath.Join(dir, "hosts")
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate), 0600))
+
+	host := hosts(t, hostsFile)
+
+	assert.NoError(t, host.Clean())
+
+	content, err := os.ReadFile(hostsFile)
+	assert.NoError(t, err)
+	assert.Equal(t, hostsTemplate, string(content))
+}
+
 func TestContains(t *testing.T) {
 	dir, err := os.MkdirTemp("", "hosts")
 	assert.NoError(t, err)

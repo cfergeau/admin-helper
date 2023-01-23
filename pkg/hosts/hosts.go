@@ -106,6 +106,7 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		}
 
 	} else {
+		// check that host not present already
 		var hostToAdd []string
 		for _, hostName := range hostEntries {
 			// check that new host not present in this line
@@ -224,9 +225,10 @@ func (h *Hosts) Clean() error {
 		return err
 	}
 
-	start, end, err := h.verifyCrcSection()
-	if err != nil {
-		return err
+	start, end := h.findCrcSection()
+	// no CRC section present
+	if start == -1 && end == -1 {
+		return nil
 	}
 
 	var newHosts []libhosty.HostsFileLine
@@ -281,6 +283,30 @@ func (h *Hosts) verifyHosts(hosts []string) error {
 }
 
 func (h *Hosts) verifyCrcSection() (int, int, error) {
+
+	start, end := h.findCrcSection()
+
+	if start > 0 && end > 0 {
+		return start, end, nil
+	}
+
+	hfl, err := libhosty.ParseHostsFileAsString(crcTemplate)
+	if err != nil {
+		return -1, -1, err
+	}
+
+	h.File.HostsFileLines = append(h.File.HostsFileLines, hfl...)
+
+	start, end = h.findCrcSection()
+
+	if start > 0 && end > 0 {
+		return start, end, nil
+	} else {
+		return -1, -1, fmt.Errorf("can't add CRC section, check hosts file")
+	}
+}
+
+func (h *Hosts) findCrcSection() (int, int) {
 	start := -1
 	end := -1
 
@@ -299,18 +325,7 @@ func (h *Hosts) verifyCrcSection() (int, int, error) {
 		}
 	}
 
-	if start > 0 && end > 0 {
-		return start, end, nil
-	}
-
-	hfl, err := libhosty.ParseHostsFileAsString(crcTemplate)
-	if err != nil {
-		return -1, -1, err
-	}
-
-	h.File.HostsFileLines = append(h.File.HostsFileLines, hfl...)
-
-	return h.verifyCrcSection()
+	return start, end
 }
 
 func (h *Hosts) findIP(start, end int, ip net.IP) ([]*libhosty.HostsFileLine, error) {
