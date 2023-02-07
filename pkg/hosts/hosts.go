@@ -35,14 +35,6 @@ type Hosts struct {
 	HostFilter func(string) bool
 }
 
-func init() {
-	// goodhosts unconditionally uses this environment variable
-	// as an override for the hosts file to use. We don't want admin-helper
-	// to modify arbitrary file, so we have to unset it before calling into
-	// goodhosts.
-	os.Unsetenv("HOSTS_PATH")
-}
-
 func New() (*Hosts, error) {
 	file, err := libhosty.Init()
 	if err != nil {
