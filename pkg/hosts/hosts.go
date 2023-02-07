@@ -179,35 +179,58 @@ func (h *Hosts) Remove(hosts []string) error {
 		hostEntries[key] = struct{}{}
 	}
 
-	start, end, err := h.verifyCrcSection()
-	if err != nil {
-		return err
-	}
+	start, end := h.findCrcSection()
 
 	h.Lock()
 	defer h.Unlock()
-	for i := start; i < end; i++ {
-		line := h.File.GetHostsFileLineByRow(i)
-		if line.Type == libhosty.LineTypeComment {
-			continue
+	// delete from CRC section
+	if start > 0 && end > 0 {
+		for i := start; i < end; i++ {
+			line := h.File.GetHostsFileLineByRow(i)
+			if line.Type == libhosty.LineTypeComment {
+				continue
+			}
+
+			for hostIdx, hostname := range line.Hostnames {
+				if _, ok := hostEntries[hostname]; ok {
+					h.removeHostFromLine(line, hostIdx, i)
+				}
+
+			}
 		}
+	} else {
+		// CRC section not present, delete hosts from entire file
+		for _, host := range hosts {
+			lineIdx, _, err := h.File.LookupByHostname(host)
+			if err != nil {
+				continue
+			}
 
-		for hostIdx, hostname := range line.Hostnames {
-			if _, ok := hostEntries[hostname]; ok {
-				if len(line.Hostnames) > 1 {
-					line.Hostnames = append(line.Hostnames[:hostIdx], line.Hostnames[hostIdx+1:]...)
+			line := h.File.GetHostsFileLineByRow(lineIdx)
+
+			for hostIdx, hostname := range line.Hostnames {
+				if hostname == host {
+					h.removeHostFromLine(line, hostIdx, lineIdx)
+					break
 				}
 
-				// remove the line if there are no more hostnames (other than the actual one)
-				if len(line.Hostnames) < 1 {
-					h.File.RemoveHostsFileLineByRow(i)
-				}
 			}
 
 		}
 	}
 
 	return h.File.SaveHostsFile()
+}
+
+func (h *Hosts) removeHostFromLine(line *libhosty.HostsFileLine, hostIdx int, i int) {
+	if len(line.Hostnames) >= 1 {
+		line.Hostnames = append(line.Hostnames[:hostIdx], line.Hostnames[hostIdx+1:]...)
+	}
+
+	// remove the line if there are no more hostnames (other than the actual one)
+	if len(line.Hostnames) < 1 {
+		h.File.RemoveHostsFileLineByRow(i)
+	}
 }
 
 func (h *Hosts) Clean() error {
@@ -293,9 +316,9 @@ func (h *Hosts) verifyCrcSection() (int, int, error) {
 
 	if start > 0 && end > 0 {
 		return start, end, nil
-	} else {
-		return -1, -1, fmt.Errorf("can't add CRC section, check hosts file")
 	}
+
+	return -1, -1, fmt.Errorf("can't add CRC section, check hosts file")
 }
 
 func (h *Hosts) findCrcSection() (int, int) {
