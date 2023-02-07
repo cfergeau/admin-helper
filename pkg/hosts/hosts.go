@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/areYouLazy/libhosty"
 )
@@ -29,6 +30,7 @@ var (
 )
 
 type Hosts struct {
+	sync.Mutex
 	File       *libhosty.HostsFile
 	HostFilter func(string) bool
 }
@@ -94,6 +96,9 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		return err
 	}
 
+	h.Lock()
+	defer h.Unlock()
+
 	// no host record, need to create new host line
 	if lines == nil {
 		multiLineHosts := ChunkSlice(hostEntries, maxHostsInLine)
@@ -119,9 +124,7 @@ func (h *Hosts) addHostToExistingLines(hostEntries []string, start int, end int,
 		// check if our line has more than maxHostsInLine hosts and rewrite it to fit maxHostsInLine
 		if len(line.Hostnames) > maxHostsInLine {
 			hostToAdd = append(line.Hostnames[maxHostsInLine:], hostToAdd...)
-			h.File.Lock()
 			line.Hostnames = line.Hostnames[0:maxHostsInLine]
-			h.File.Unlock()
 		}
 		if len(hostToAdd)+len(line.Hostnames) > maxHostsInLine {
 
@@ -131,15 +134,11 @@ func (h *Hosts) addHostToExistingLines(hostEntries []string, start int, end int,
 			}
 
 			hostsForExistingLine := hostToAdd[0:fittingNumOfRecords]
-			h.File.Lock()
 			line.Hostnames = append(line.Hostnames, hostsForExistingLine...)
-			h.File.Unlock()
 			hostToAdd = hostToAdd[fittingNumOfRecords:]
 
 		} else {
-			h.File.Lock()
 			line.Hostnames = append(line.Hostnames, hostToAdd...)
-			h.File.Unlock()
 			hostToAdd = nil
 		}
 	}
@@ -161,13 +160,11 @@ func (h *Hosts) createAndAddHostsLine(ip net.IP, hosts []string, sectionStart in
 	newHosts = append(newHosts, h.File.HostsFileLines[:sectionStart+1]...)
 	newHosts = append(newHosts, hfl)
 	newLineNum := len(newHosts) - 1
-	h.File.Lock()
 	newHosts = append(newHosts, h.File.HostsFileLines[sectionStart+1:]...)
 	h.File.HostsFileLines = newHosts
 
 	// generate raw version of the line
 	hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
-	h.File.Unlock()
 }
 
 func (h *Hosts) Remove(hosts []string) error {
@@ -195,6 +192,8 @@ func (h *Hosts) Remove(hosts []string) error {
 		return err
 	}
 
+	h.Lock()
+	defer h.Unlock()
 	for i := start; i < end; i++ {
 		line := h.File.GetHostsFileLineByRow(i)
 		if line.Type == libhosty.LineTypeComment {
@@ -204,9 +203,7 @@ func (h *Hosts) Remove(hosts []string) error {
 		for hostIdx, hostname := range line.Hostnames {
 			if _, ok := hostEntries[hostname]; ok {
 				if len(line.Hostnames) > 1 {
-					h.File.Lock()
 					line.Hostnames = append(line.Hostnames[:hostIdx], line.Hostnames[hostIdx+1:]...)
-					h.File.Unlock()
 				}
 
 				// remove the line if there are no more hostnames (other than the actual one)
@@ -226,6 +223,9 @@ func (h *Hosts) Clean() error {
 		return err
 	}
 
+	h.Lock()
+	defer h.Unlock()
+
 	start, end := h.findCrcSection()
 	// no CRC section present
 	if start == -1 && end == -1 {
@@ -236,9 +236,8 @@ func (h *Hosts) Clean() error {
 
 	newHosts = append(newHosts, h.File.HostsFileLines[:start-1]...)
 	newHosts = append(newHosts, h.File.HostsFileLines[end+1:]...)
-	h.File.Lock()
 	h.File.HostsFileLines = newHosts
-	h.File.Unlock()
+
 	_, _, emptyLineErr := h.File.AddEmptyFileLine()
 	if emptyLineErr != nil {
 		return emptyLineErr
