@@ -53,7 +53,7 @@ func TestAddMoreThen9Hosts(t *testing.T) {
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry9", "127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry8")+eol(), string(content))
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry1 entry2 entry3 entry4 entry5 entry6 entry7 entry8 entry9", "127.0.0.1        entry10")+eol(), string(content))
 }
 
 func TestAddMoreThan18Hosts(t *testing.T) {
@@ -71,7 +71,8 @@ func TestAddMoreThan18Hosts(t *testing.T) {
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry17 entry18 entry19 entry2 entry20 entry3 entry4 entry5 entry6 entry7 entry8 entry9", "127.0.0.1        entry0 entry1 entry10 entry11 entry12 entry13 entry14 entry15 entry16")+eol(), string(content))
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry0 entry1 entry2 entry3 entry4 entry5 entry6 entry7 entry8", "127.0.0.1        entry9 entry10 entry11 entry12 entry13 entry14 entry15 entry16 entry17", "127.0.0.1        entry18 entry19 entry20")+eol(), string(content))
+
 }
 
 func TestAddMoreThen9HostsInMultipleLines(t *testing.T) {
@@ -88,7 +89,7 @@ func TestAddMoreThen9HostsInMultipleLines(t *testing.T) {
 
 	content, err := os.ReadFile(hostsFile)
 	assert.NoError(t, err)
-	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry8", "127.0.0.1        entry11 entry12 entry13 entry14 entry15 entry16 entry17 entry18 entry9")+eol(), string(content))
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry11", "127.0.0.1        entry12 entry13 entry14 entry15 entry16 entry17 entry18 entry8 entry9")+eol(), string(content))
 }
 
 func TestRemove(t *testing.T) {

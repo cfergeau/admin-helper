@@ -5,7 +5,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 
@@ -66,18 +65,6 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		return libhosty.ErrCannotParseIPAddress(ipRaw)
 	}
 
-	uniqueHosts := map[string]bool{}
-	for i := 0; i < len(hosts); i++ {
-		uniqueHosts[hosts[i]] = true
-	}
-
-	var hostEntries []string
-	for key := range uniqueHosts {
-		hostEntries = append(hostEntries, key)
-	}
-
-	sort.Strings(hostEntries)
-
 	start, end, err := h.verifyCrcSection()
 	if err != nil {
 		return err
@@ -91,72 +78,29 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	h.Lock()
 	defer h.Unlock()
 
-	// no host record, need to create new host line
-	if lines == nil {
-		multiLineHosts := ChunkSlice(hostEntries, maxHostsInLine)
-		for _, hosts := range multiLineHosts {
-			h.createAndAddHostsLine(ip, hosts, start)
-		}
-	} else {
-		h.addHostToExistingLines(hostEntries, start, end, lines, ip)
+	hostnames := [][]string{}
+	for _, line := range lines {
+		hostnames = append(hostnames, line.Hostnames)
 	}
+	hostnames = append(hostnames, hosts)
+
+	hostsFileLines := []libhosty.HostsFileLine{}
+	hostsFileLines = append(hostsFileLines, h.File.HostsFileLines[:start+1]...)
+	for _, lineContent := range ChunkSlices(maxHostsInLine, hostnames...) {
+		hostsFileLines = append(hostsFileLines, newHostsFileLine(ip, lineContent))
+	}
+	hostsFileLines = append(hostsFileLines, h.File.HostsFileLines[end:]...)
+	h.File.HostsFileLines = hostsFileLines
 
 	return h.File.SaveHostsFile()
 }
 
-func (h *Hosts) addHostToExistingLines(hostEntries []string, start int, end int, lines []*libhosty.HostsFileLine, ip net.IP) {
-	// check that host not present already
-	var hostToAdd []string
-	for _, hostName := range hostEntries {
-		if !h.lineContains(hostName, start, end) {
-			hostToAdd = append(hostToAdd, hostName)
-		}
-	}
-	for _, line := range lines {
-		// check if our line has more than maxHostsInLine hosts and rewrite it to fit maxHostsInLine
-		if len(line.Hostnames) > maxHostsInLine {
-			hostToAdd = append(line.Hostnames[maxHostsInLine:], hostToAdd...)
-			line.Hostnames = line.Hostnames[0:maxHostsInLine]
-		}
-		if len(hostToAdd)+len(line.Hostnames) > maxHostsInLine {
-
-			fittingNumOfRecords := maxHostsInLine - len(line.Hostnames)
-			if fittingNumOfRecords > len(hostToAdd) {
-				fittingNumOfRecords = len(hostToAdd)
-			}
-
-			hostsForExistingLine := hostToAdd[0:fittingNumOfRecords]
-			line.Hostnames = append(line.Hostnames, hostsForExistingLine...)
-			hostToAdd = hostToAdd[fittingNumOfRecords:]
-
-		} else {
-			line.Hostnames = append(line.Hostnames, hostToAdd...)
-			hostToAdd = nil
-		}
-	}
-
-	if len(hostToAdd) > 0 {
-		h.createAndAddHostsLine(ip, hostToAdd, lines[len(lines)-1].Number)
-	}
-}
-
-func (h *Hosts) createAndAddHostsLine(ip net.IP, hosts []string, sectionStart int) {
-	hfl := libhosty.HostsFileLine{
+func newHostsFileLine(ip net.IP, hostEntries []string) libhosty.HostsFileLine {
+	return libhosty.HostsFileLine{
 		Type:      libhosty.LineTypeAddress,
 		Address:   ip,
-		Hostnames: hosts,
+		Hostnames: hostEntries,
 	}
-
-	// inserts to hosts
-	newHosts := make([]libhosty.HostsFileLine, 0)
-	newHosts = append(newHosts, h.File.HostsFileLines[:sectionStart+1]...)
-	newHosts = append(newHosts, hfl)
-	newLineNum := len(newHosts) - 1
-	newHosts = append(newHosts, h.File.HostsFileLines[sectionStart+1:]...)
-	h.File.HostsFileLines = newHosts
-
-	// generate raw version of the line
-	hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
 }
 
 func (h *Hosts) Remove(hosts []string) error {
