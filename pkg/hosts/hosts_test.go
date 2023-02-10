@@ -56,6 +56,24 @@ func TestAddMoreThen9Hosts(t *testing.T) {
 	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry9", "127.0.0.1        entry1 entry10 entry2 entry3 entry4 entry5 entry6 entry7 entry8")+eol(), string(content))
 }
 
+func TestAddMoreThan18Hosts(t *testing.T) {
+	dir, err := os.MkdirTemp("", "hosts")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	hostsFile := filepath.Join(dir, "hosts")
+	assert.NoError(t, os.WriteFile(hostsFile, []byte(hostsTemplate), 0600))
+
+	host := hosts(t, hostsFile)
+
+	assert.NoError(t, host.Add("127.0.0.1", []string{"entry0"}))
+	assert.NoError(t, host.Add("127.0.0.1", []string{"entry1", "entry2", "entry3", "entry3", "entry4", "entry5", "entry6", "entry7", "entry8", "entry9", "entry10", "entry11", "entry12", "entry13", "entry14", "entry15", "entry16", "entry17", "entry18", "entry19", "entry20"}))
+
+	content, err := os.ReadFile(hostsFile)
+	assert.NoError(t, err)
+	assert.Equal(t, hostsTemplate+eol()+crcSection("127.0.0.1        entry17 entry18 entry19 entry2 entry20 entry3 entry4 entry5 entry6 entry7 entry8 entry9", "127.0.0.1        entry0 entry1 entry10 entry11 entry12 entry13 entry14 entry15 entry16")+eol(), string(content))
+}
+
 func TestAddMoreThen9HostsInMultipleLines(t *testing.T) {
 	dir, err := os.MkdirTemp("", "hosts")
 	assert.NoError(t, err)
