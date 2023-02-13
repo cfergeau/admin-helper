@@ -92,52 +92,42 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	defer h.Unlock()
 
 	// no host record, need to create new host line
-	if lines == nil {
-		multiLineHosts := ChunkSlice(hostEntries, maxHostsInLine)
-		for _, hosts := range multiLineHosts {
-			h.createAndAddHostsLine(ip, hosts, start)
-		}
-	} else {
-		h.addHostToExistingLines(hostEntries, start, end, lines, ip)
-	}
+	h.addNewHostEntries(hostEntries, start, end, lines, ip)
 
 	return h.File.SaveHostsFile()
 }
 
-func (h *Hosts) addHostToExistingLines(hostEntries []string, start int, end int, lines []*libhosty.HostsFileLine, ip net.IP) {
+func (h *Hosts) addNewHostEntries(hostEntries []string, start int, end int, lines []*libhosty.HostsFileLine, ip net.IP) {
 	// check that host not present already
-	var hostToAdd []string
-	for _, hostName := range hostEntries {
-		if !h.lineContains(hostName, start, end) {
-			hostToAdd = append(hostToAdd, hostName)
+	var hostAdder HostAdder
+	if lines == nil {
+		hostAdder.AppendHosts(hostEntries...)
+	} else {
+		// Don't add hostnames which are already present in crc's section
+		for _, hostName := range hostEntries {
+			if !h.lineContains(hostName, start, end) {
+				hostAdder.AppendHost(hostName)
+			}
 		}
 	}
 	for _, line := range lines {
-		// check if our line has more than maxHostsInLine hosts and rewrite it to fit maxHostsInLine
-		if len(line.Hostnames) > maxHostsInLine {
-			hostToAdd = append(line.Hostnames[maxHostsInLine:], hostToAdd...)
-			line.Hostnames = line.Hostnames[0:maxHostsInLine]
-		}
-		if len(hostToAdd)+len(line.Hostnames) > maxHostsInLine {
-
-			fittingNumOfRecords := maxHostsInLine - len(line.Hostnames)
-			if fittingNumOfRecords > len(hostToAdd) {
-				fittingNumOfRecords = len(hostToAdd)
-			}
-
-			hostsForExistingLine := hostToAdd[0:fittingNumOfRecords]
-			line.Hostnames = append(line.Hostnames, hostsForExistingLine...)
-			hostToAdd = hostToAdd[fittingNumOfRecords:]
-
-		} else {
-			line.Hostnames = append(line.Hostnames, hostToAdd...)
-			hostToAdd = nil
-		}
+		// This will append hosts from the hostAdder to fill the line up to 9 entries
+		// Lines over 9 entries will be truncated, and their extra
+		// entries will be added to hostAdder so that they can added to the next lines
+		hostAdder.FillLine(line)
 	}
 
-	if len(hostToAdd) > 0 {
-		h.createAndAddHostsLine(ip, hostToAdd, lines[len(lines)-1].Number)
+	// Create new lines for entries left-over entries (entries which haven't been added existing lines)
+	hostsToAdd := hostAdder.PopN(maxHostsInLine)
+	for len(hostsToAdd) > 0 {
+		h.createAndAddHostsLine(ip, hostsToAdd, h.lastNonCommentLine())
+		hostsToAdd = hostAdder.PopN(maxHostsInLine)
 	}
+}
+
+func (h *Hosts) lastNonCommentLine() int {
+	_, end := h.findCrcSection()
+	return end - 1
 }
 
 func (h *Hosts) createAndAddHostsLine(ip net.IP, hosts []string, sectionStart int) {
