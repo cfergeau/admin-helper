@@ -51,6 +51,40 @@ func defaultFilter(s string) bool {
 	return clusterRegexp.MatchString(s) || appRegexp.MatchString(s)
 }
 
+func linesContain(lines []*libhosty.HostsFileLine, hostName string) bool {
+	for _, line := range lines {
+		for _, hn := range line.Hostnames {
+			if hn == hostName {
+				return true
+			}
+
+		}
+	}
+
+	return false
+}
+
+func uniqueHostnames(lines []*libhosty.HostsFileLine, hosts []string) []string {
+	uniqueHosts := map[string]bool{}
+
+	// Remove duplicate entries from `hosts`
+	for _, host := range hosts {
+		uniqueHosts[host] = true
+	}
+
+	// Remove entries in `hosts` which are already present in the file
+	var hostEntries []string
+	for hostname := range uniqueHosts {
+		if !linesContain(lines, hostname) {
+			hostEntries = append(hostEntries, hostname)
+		}
+	}
+
+	sort.Strings(hostEntries)
+
+	return hostEntries
+}
+
 func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	if err := h.verifyHosts(hosts); err != nil {
 		return err
@@ -66,18 +100,6 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 		return libhosty.ErrCannotParseIPAddress(ipRaw)
 	}
 
-	uniqueHosts := map[string]bool{}
-	for i := 0; i < len(hosts); i++ {
-		uniqueHosts[hosts[i]] = true
-	}
-
-	var hostEntries []string
-	for key := range uniqueHosts {
-		hostEntries = append(hostEntries, key)
-	}
-
-	sort.Strings(hostEntries)
-
 	start, end, err := h.verifyCrcSection()
 	if err != nil {
 		return err
@@ -91,25 +113,18 @@ func (h *Hosts) Add(ipRaw string, hosts []string) error {
 	h.Lock()
 	defer h.Unlock()
 
-	// no host record, need to create new host line
+	hostEntries := uniqueHostnames(lines, hosts)
+
 	h.addNewHostEntries(hostEntries, start, end, lines, ip)
 
 	return h.File.SaveHostsFile()
 }
 
 func (h *Hosts) addNewHostEntries(hostEntries []string, start int, end int, lines []*libhosty.HostsFileLine, ip net.IP) {
-	// check that host not present already
 	var hostAdder HostAdder
-	if lines == nil {
-		hostAdder.AppendHosts(hostEntries...)
-	} else {
-		// Don't add hostnames which are already present in crc's section
-		for _, hostName := range hostEntries {
-			if !h.lineContains(hostName, start, end) {
-				hostAdder.AppendHost(hostName)
-			}
-		}
-	}
+
+	hostAdder.AppendHosts(hostEntries...)
+
 	for _, line := range lines {
 		// This will append hosts from the hostAdder to fill the line up to 9 entries
 		// Lines over 9 entries will be truncated, and their extra
@@ -347,9 +362,4 @@ func (h *Hosts) findIP(start, end int, ip net.IP) ([]*libhosty.HostsFileLine, er
 	}
 
 	return result, nil
-}
-
-func (h *Hosts) lineContains(hostName string, sectionStart, sectionEnd int) bool {
-	lineNum, _ := h.File.GetHostsFileLineByHostname(hostName)
-	return lineNum > sectionStart && lineNum < sectionEnd
 }
