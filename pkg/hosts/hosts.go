@@ -164,6 +164,14 @@ func (h *Hosts) createAndAddHostsLine(ip net.IP, hosts []string, sectionStart in
 	hfl.Raw = h.File.RenderHostsFileLine(newLineNum)
 }
 
+func contains(hosts []string, host string) bool {
+	for _, h := range hosts {
+		if h == host {
+			return true
+		}
+	}
+	return false
+}
 func (h *Hosts) Remove(hosts []string) error {
 	if err := h.verifyHosts(hosts); err != nil {
 		return err
@@ -192,7 +200,7 @@ func (h *Hosts) Remove(hosts []string) error {
 
 			for hostIdx := len(line.Hostnames) - 1; hostIdx >= 0; hostIdx-- {
 				hostname := line.Hostnames[hostIdx]
-				if _, ok := hostEntries[hostname]; ok {
+				if contains(hosts, hostname) {
 					h.removeHostFromLine(line, hostIdx, i)
 				}
 
