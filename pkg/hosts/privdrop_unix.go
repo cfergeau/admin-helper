@@ -5,25 +5,11 @@ package hosts
 
 import (
 	"fmt"
-	"os"
 	"syscall"
 )
 
-// OpenHostsFileAndDropPrivileges opens path for read/write while privileged, then
-// drops setuid privileges to the invoking user. The returned file descriptor may
-// be used to update the hosts file after privileges have been dropped.
-func OpenHostsFileAndDropPrivileges(path string) (*os.File, error) {
-	file, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open hosts file: %w", err)
-	}
-
-	if err := dropPrivilegesFn(); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-
-	return file, nil
+func DropPrivileges() error {
+	return dropPrivilegesFn()
 }
 
 var (

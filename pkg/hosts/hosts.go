@@ -33,18 +33,35 @@ type Hosts struct {
 	sync.Mutex
 	File       *libhosty.HostsFile
 	HostFilter func(string) bool
+	GoFileHandle *os.File
 }
 
-func New() (*Hosts, error) {
+func new(readOnly bool) (*Hosts, error) {
 	file, err := libhosty.Init()
 	if err != nil {
 		return nil, err
 	}
+	var gofile *os.File
+	if !readOnly {
+		gofile, err = os.OpenFile(file.Config.FilePath, os.O_RDWR, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &Hosts{
 		File:       file,
+		GoFileHandle: gofile,
 		HostFilter: defaultFilter,
 	}, nil
+}
+
+func New() (*Hosts, error) {
+	return new(false)
+}
+
+func NewReadOnly() (*Hosts, error) {
+	return new(true)
 }
 
 func defaultFilter(s string) bool {
