@@ -10,6 +10,16 @@ import (
 )
 
 func main() {
+	/*
+	_, err := hosts.PreOpenHostsFile()
+	if err != nil {
+		os.Exit(1)
+	}
+	err = hosts.DropPrivileges()
+	if err != nil {
+		os.Exit(1)
+	}
+	*/
 	rootCmd := &cobra.Command{
 		Use:          "admin-helper",
 		Version:      constants.Version,
